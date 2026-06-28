@@ -1,0 +1,115 @@
+name: aiops-build-analysis
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build Application
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn clean package 2>&1 | tee build.log
+
+      - name: Upload Build Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+  gemini-analysis:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show Build Result
+        run: |
+          echo "Build Result = ${{ needs.build.result }}"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        if: needs.build.result == 'failure'
+        with:
+          name: build-log
+
+      - name: Install Python Dependencies
+        if: needs.build.result == 'failure'
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-generativeai
+
+      - name: Gemini Analysis
+        if: needs.build.result == 'failure'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python scripts/analyze_build.py
+  
+  deploy:
+    needs: build
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Render
+        shell: bash
+        run: |
+          set -o pipefail
+          curl --fail -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK1 }}" 2>&1 | tee deploy.log
+
+      - name: Upload Deploy Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-log
+          path: deploy.log
+  
+  deploy-analysis:
+    needs: deploy
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show Deploy Result
+        run: |
+          echo "Deploy Result = ${{ needs.deploy.result }}"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        if: needs.deploy.result == 'failure'
+        with:
+          name: deploy-log
+
+      - name: Install Python Dependencies
+        if: needs.deploy.result == 'failure'
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-generativeai
+
+      - name: Gemini Deploy Analysis
+        if: needs.deploy.result == 'failure'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python scripts/analyze_deploy.py
+

@@ -1,0 +1,80 @@
+name: aiops-pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  aiops-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build Application
+        id: build
+        run: |
+          mvn clean package 2>&1 | tee build.log
+        continue-on-error: true
+
+      - name: Install Python Dependencies (Build Analysis)
+        if: steps.build.outcome == 'failure'
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-generativeai
+        continue-on-error: true
+
+      - name: Gemini Build Analysis
+        if: steps.build.outcome == 'failure'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python scripts/analyze_build.py || true
+        continue-on-error: true
+
+      - name: Stop Pipeline After Build Failure
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "Build failed. Gemini analysis completed."
+          exit 1
+
+      - name: Deploy to Render
+        id: deploy
+        if: steps.build.outcome == 'success'
+        run: |
+          curl --fail -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}" 2>&1 | tee deploy.log
+        continue-on-error: true
+
+      - name: Install Python Dependencies (Deploy Analysis)
+        if: steps.deploy.outcome == 'failure'
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-generativeai
+        continue-on-error: true
+
+      - name: Gemini Deploy Analysis
+        if: steps.deploy.outcome == 'failure'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python scripts/analyze_deploy.py || true
+        continue-on-error: true
+
+      - name: Stop Pipeline After Deploy Failure
+        if: steps.deploy.outcome == 'failure'
+        run: |
+          echo "Deploy failed. Gemini analysis completed."
+          exit 1
+
+      - name: Pipeline Success
+        run: |
+          echo "Build and Deploy completed successfully."
