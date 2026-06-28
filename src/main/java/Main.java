@@ -12,7 +12,7 @@ public class Main {
         get("/add", (req, res) -> {
             int a = Integer.parseInt(req.queryParams("a"));
             int b = Integer.parseInt(req.queryParams("b"));
-            return String.valueOf(a + b);
+            return String.valueOf(a + b)
         });
     }
 }
