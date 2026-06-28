@@ -74,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          curl --fail -s -X POST "${{secrets.RENDER_DEPLOY_HOOK}}" 2>&1 | tee deploy.log
+          curl --fail -s -X POST "${{secrets.RENDER_DEPLOY_HOOK1}}" 2>&1 | tee deploy.log
 
       - name: Upload Deploy Log
         if: failure()
